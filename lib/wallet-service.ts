@@ -227,6 +227,15 @@ export class WalletService {
 
       // Only create transaction if it doesn't exist
       if (!existingTransaction) {
+        // Get job title for better description
+        const { data: jobData, error: jobTitleError } = await supabase
+          .from("jobs")
+          .select("title")
+          .eq("id", jobId)
+          .single()
+
+        const jobTitle = jobData?.title || "job"
+
         const { error: transactionError } = await supabase.from("transactions").insert([
           {
             user_id: finderId,
@@ -234,7 +243,7 @@ export class WalletService {
             type: "earning",
             amount: finalAmount,
             status: "completed",
-            description: `Payment received for completed job`,
+            description: `Payment received for ${jobTitle}`,
             completed_at: new Date().toISOString(),
             metadata: { completion_id: completion.id },
           },
@@ -334,7 +343,7 @@ export class WalletService {
           type: "withdrawal",
           amount: amount,
           status: "completed",
-          description: `Withdrawal to ${upiId ? `UPI: ${upiId}` : `Bank: ${bankName}`}`,
+          description: `Withdrawal from Part Time Job Finder wallet to ${upiId ? `UPI: ${upiId}` : `Bank: ${bankName}`}`,
           completed_at: new Date().toISOString(),
           metadata: {
             withdrawal_id: withdrawalRecord.id,

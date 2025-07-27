@@ -11,7 +11,14 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import {
   Plus,
   Briefcase,
@@ -28,6 +35,9 @@ import {
   Phone,
   MapPin,
   Timer,
+  DollarSign,
+  Building,
+  Smartphone,
 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { WalletService } from "@/lib/wallet-service"
@@ -340,7 +350,7 @@ export default function PosterDashboard({ user }: PosterDashboardProps) {
     }
   }
 
-  const handleCompleteJob = async (jobId: string, finderId: string, finalAmount: number) => {
+  const handleCompleteJob = async (jobId: string, finderId: string, finalAmount: number, paymentMethod: string) => {
     // Prevent multiple completion attempts
     if (completingJobs.has(jobId)) {
       return
@@ -357,14 +367,23 @@ export default function PosterDashboard({ user }: PosterDashboardProps) {
         return
       }
 
-      const success = await WalletService.completeJob(jobId, finderId, user.id, finalAmount)
+      const success = await WalletService.completeJob(
+        jobId,
+        finderId,
+        user.id,
+        finalAmount,
+        `Job completed with ${paymentMethod} payment`,
+      )
       if (success) {
+        alert(`Payment completed successfully via ${paymentMethod}!`)
         loadData() // Refresh data
       } else {
         console.error("Failed to complete job")
+        alert("Failed to complete job. Please try again.")
       }
     } catch (error) {
       console.error("Error completing job:", error)
+      alert("Error completing job. Please try again.")
     } finally {
       setCompletingJobs((prev) => {
         const newSet = new Set(prev)
@@ -1039,12 +1058,37 @@ function ConfirmedJobCard({
   onComplete,
   isCompleting = false,
 }: {
-  item: any | any
-  onComplete?: (jobId: string, finderId: string, finalAmount: number) => void
+  item: Application | Negotiation
+  onComplete?: (jobId: string, finderId: string, finalAmount: number, paymentMethod: string) => void
   isCompleting?: boolean
 }) {
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("")
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const isNegotiation = "proposedAmount" in item
   const finalAmount = isNegotiation ? item.proposedAmount : item.job.budget
+
+  const handleCompletePayment = async () => {
+    if (!selectedPaymentMethod || !onComplete) return
+
+    setIsProcessing(true)
+    try {
+      // Simulate payment processing
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Call the completion handler with payment method
+      onComplete(item.job.id, item.finderId, finalAmount, selectedPaymentMethod)
+
+      setShowPaymentDialog(false)
+      setSelectedPaymentMethod("")
+    } catch (error) {
+      console.error("Payment error:", error)
+      alert("Payment failed. Please try again.")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   return (
     <Card className="rounded-lg border border-gray-200 bg-green-50">
@@ -1061,7 +1105,7 @@ function ConfirmedJobCard({
               <span className="font-semibold text-green-600">Final Amount: ₹{finalAmount.toLocaleString()}</span>
             </div>
             <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
-              <span>Assigned to: {isNegotiation ? item.finderName : item.finderName}</span>
+              <span>Assigned to: {item.finderName}</span>
             </div>
             {isNegotiation && (
               <div className="flex items-center space-x-2 text-sm text-gray-600 mb-3">
@@ -1071,7 +1115,7 @@ function ConfirmedJobCard({
               </div>
             )}
 
-            {/* Student Details Section - Auto-populated from application/negotiation */}
+            {/* Student Details Section */}
             <div className="mt-4 p-4 bg-white rounded-lg border">
               <h4 className="font-medium text-gray-900 mb-3">Student Details</h4>
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1098,17 +1142,136 @@ function ConfirmedJobCard({
               </div>
             </div>
 
+            {/* Payment Action Button */}
             {onComplete && (
               <div className="mt-4">
-                <Button
-                  onClick={() => onComplete(item.job.id, item.finderId, finalAmount)}
-                  size="sm"
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700"
-                  disabled={isCompleting}
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  {isCompleting ? "Completing..." : "Mark as Complete"}
-                </Button>
+                <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+                  <DialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="rounded-lg bg-blue-600 hover:bg-blue-700"
+                      disabled={isCompleting || isProcessing}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      {isCompleting || isProcessing ? "Processing..." : "Mark as Complete and Make Payment"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-xl max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Complete Job & Make Payment</DialogTitle>
+                      <DialogDescription>Complete "{item.job.title}" and process payment</DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6">
+                      {/* Payment Amount Display */}
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="text-center">
+                          <p className="text-sm text-green-600 mb-1">Payment Amount</p>
+                          <p className="text-3xl font-bold text-green-700">₹{finalAmount.toLocaleString()}</p>
+                          <p className="text-xs text-green-600 mt-1">
+                            {isNegotiation ? "Negotiated Amount" : "Original Job Amount"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Payment Method Selection */}
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Select Payment Method</Label>
+
+                        <div className="space-y-2">
+                          <Button
+                            variant={selectedPaymentMethod === "cash" ? "default" : "outline"}
+                            className="w-full justify-start h-12 rounded-lg"
+                            onClick={() => setSelectedPaymentMethod("cash")}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="p-2 bg-green-100 rounded-full">
+                                <DollarSign className="h-4 w-4 text-green-600" />
+                              </div>
+                              <div className="text-left">
+                                <div className="font-medium">Cash Payment</div>
+                                <div className="text-xs text-gray-500">Pay in cash directly</div>
+                              </div>
+                            </div>
+                          </Button>
+
+                          <Button
+                            variant={selectedPaymentMethod === "upi" ? "default" : "outline"}
+                            className="w-full justify-start h-12 rounded-lg"
+                            onClick={() => setSelectedPaymentMethod("upi")}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="p-2 bg-blue-100 rounded-full">
+                                <Smartphone className="h-4 w-4 text-blue-600" />
+                              </div>
+                              <div className="text-left">
+                                <div className="font-medium">UPI Payment</div>
+                                <div className="text-xs text-gray-500">Pay via UPI apps</div>
+                              </div>
+                            </div>
+                          </Button>
+
+                          <Button
+                            variant={selectedPaymentMethod === "bank" ? "default" : "outline"}
+                            className="w-full justify-start h-12 rounded-lg"
+                            onClick={() => setSelectedPaymentMethod("bank")}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div className="p-2 bg-purple-100 rounded-full">
+                                <Building className="h-4 w-4 text-purple-600" />
+                              </div>
+                              <div className="text-left">
+                                <div className="font-medium">Bank Transfer</div>
+                                <div className="text-xs text-gray-500">Direct bank transfer</div>
+                              </div>
+                            </div>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex space-x-3">
+                        <Button
+                          onClick={handleCompletePayment}
+                          className="flex-1 rounded-lg"
+                          disabled={!selectedPaymentMethod || isProcessing}
+                        >
+                          {isProcessing ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Complete & Pay
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowPaymentDialog(false)
+                            setSelectedPaymentMethod("")
+                          }}
+                          className="rounded-lg"
+                          disabled={isProcessing}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+
+                      {selectedPaymentMethod && (
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-xs text-blue-700">
+                            <strong>Note:</strong> By completing this job, you confirm that the work has been finished
+                            satisfactorily and you're ready to process payment via {selectedPaymentMethod}.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
           </div>

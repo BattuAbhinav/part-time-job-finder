@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Briefcase, Search, Users, AlertCircle } from "lucide-react"
+import { Briefcase, Search, Users, AlertCircle, Eye, EyeOff } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import Dashboard from "./dashboard"
 
@@ -25,13 +25,13 @@ export default function WorkHopApp() {
 
   useEffect(() => {
     // Check if user is already logged in
-    const savedUser = localStorage.getItem("workshop_user")
+    const savedUser = localStorage.getItem("parttime_job_finder_user")
     if (savedUser) {
       try {
         setUser(JSON.parse(savedUser))
       } catch (error) {
         console.error("Error parsing saved user:", error)
-        localStorage.removeItem("workshop_user")
+        localStorage.removeItem("parttime_job_finder_user")
       }
     }
     setIsLoading(false)
@@ -67,7 +67,7 @@ export default function WorkHopApp() {
         }
 
         setUser(newUser)
-        localStorage.setItem("workshop_user", JSON.stringify(newUser))
+        localStorage.setItem("parttime_job_finder_user", JSON.stringify(newUser))
       } else {
         // Login existing user
         const { data, error } = await supabase.from("users").select("*").eq("email", email).eq("role", role).single()
@@ -86,7 +86,7 @@ export default function WorkHopApp() {
         }
 
         setUser(existingUser)
-        localStorage.setItem("workshop_user", JSON.stringify(existingUser))
+        localStorage.setItem("parttime_job_finder_user", JSON.stringify(existingUser))
       }
     } catch (error) {
       console.error("Authentication error:", error)
@@ -96,7 +96,7 @@ export default function WorkHopApp() {
 
   const handleLogout = () => {
     setUser(null)
-    localStorage.removeItem("workshop_user")
+    localStorage.removeItem("parttime_job_finder_user")
   }
 
   if (isLoading) {
@@ -122,6 +122,7 @@ function AuthPage({
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
   const [error, setError] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (isSignup: boolean) => {
     setError("")
@@ -155,9 +156,9 @@ function AuthPage({
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center space-x-2">
             <Briefcase className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600" />
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">WorkHop</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Part Time Job Finder</h1>
           </div>
-          <p className="text-gray-600 text-sm sm:text-base">Connect talent with opportunities</p>
+          <p className="text-gray-600 text-sm sm:text-base">Connect students with part-time opportunities</p>
         </div>
 
         {!selectedRole ? (
@@ -174,7 +175,7 @@ function AuthPage({
               >
                 <Search className="h-5 w-5 sm:h-6 sm:w-6" />
                 <div>
-                  <div className="font-semibold text-sm sm:text-base">I'm a Finder</div>
+                  <div className="font-semibold text-sm sm:text-base">I'm a Job Finder</div>
                   <div className="text-xs sm:text-sm opacity-75">Looking for work opportunities</div>
                 </div>
               </Button>
@@ -186,7 +187,7 @@ function AuthPage({
               >
                 <Users className="h-5 w-5 sm:h-6 sm:w-6" />
                 <div>
-                  <div className="font-semibold text-sm sm:text-base">I'm a Poster</div>
+                  <div className="font-semibold text-sm sm:text-base">I'm a Job Poster</div>
                   <div className="text-xs sm:text-sm opacity-75">Looking to hire talent</div>
                 </div>
               </Button>
@@ -195,7 +196,7 @@ function AuthPage({
         ) : (
           <Card className="border-0 shadow-lg">
             <CardHeader className="text-center">
-              <CardTitle>Welcome {selectedRole === "finder" ? "Finder" : "Poster"}!</CardTitle>
+              <CardTitle>Welcome {selectedRole === "finder" ? "Job Finder" : "Job Poster"}!</CardTitle>
               <CardDescription>Sign in to your account or create a new one</CardDescription>
             </CardHeader>
             <CardContent>
@@ -226,21 +227,36 @@ function AuthPage({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="rounded-lg"
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="rounded-lg pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <Button
                     onClick={() => handleSubmit(false)}
                     className="w-full rounded-lg"
                     disabled={!email || !password}
                   >
-                    Login as {selectedRole === "finder" ? "Finder" : "Poster"}
+                    Login as {selectedRole === "finder" ? "Job Finder" : "Job Poster"}
                   </Button>
                 </TabsContent>
 
@@ -268,21 +284,36 @@ function AuthPage({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Create a password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="rounded-lg"
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Create a password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="rounded-lg pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-400" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <Button
                     onClick={() => handleSubmit(true)}
                     className="w-full rounded-lg"
                     disabled={!name || !email || !password}
                   >
-                    Sign Up as {selectedRole === "finder" ? "Finder" : "Poster"}
+                    Sign Up as {selectedRole === "finder" ? "Job Finder" : "Job Poster"}
                   </Button>
                 </TabsContent>
               </Tabs>
@@ -296,6 +327,7 @@ function AuthPage({
                     setEmail("")
                     setPassword("")
                     setName("")
+                    setShowPassword(false)
                   }}
                   className="text-sm text-gray-500 hover:text-gray-700"
                 >

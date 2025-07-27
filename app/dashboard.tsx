@@ -28,13 +28,18 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             <div className="flex items-center space-x-2 sm:space-x-4">
               <div className="flex items-center space-x-2">
                 <Briefcase className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600" />
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">WorkHop</h1>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2">
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Part Time Job Finder</h1>
+                  <span className="text-xs sm:text-sm text-gray-500 font-medium">
+                    {user.role === "finder" ? "Find Your Next Opportunity" : "Hire Talented Students"}
+                  </span>
+                </div>
               </div>
               <Badge
                 variant={user.role === "finder" ? "default" : "secondary"}
                 className="rounded-full text-xs sm:text-sm"
               >
-                {user.role === "finder" ? "Finder" : "Poster"}
+                {user.role === "finder" ? "Job Finder" : "Job Poster"}
               </Badge>
             </div>
 

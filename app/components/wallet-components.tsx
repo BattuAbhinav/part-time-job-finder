@@ -87,7 +87,7 @@ export function WithdrawButtonComponent({ balance, onWithdraw, userId }: Withdra
       <DialogContent className="rounded-xl">
         <DialogHeader>
           <DialogTitle>Withdraw Funds</DialogTitle>
-          <DialogDescription>Withdraw money from your WorkHop wallet</DialogDescription>
+          <DialogDescription>Withdraw money from your Part Time Job Finder wallet</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="p-4 bg-gray-50 rounded-lg">
