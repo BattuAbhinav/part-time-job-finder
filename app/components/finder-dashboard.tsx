@@ -6,32 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import {
-  Search,
-  FileText,
-  Handshake,
-  Wallet,
-  Bell,
-  DollarSign,
-  Clock,
-  CheckCircle,
-  X,
-  Send,
-  Star,
-  History,
-  CreditCard,
-  Building,
-  Smartphone,
-} from "lucide-react"
-import { supabase } from "@/lib/supabase"
-import {
-  WalletService,
-  type WalletData,
-  type Transaction as WalletTransaction,
-  type WithdrawalHistory,
-} from "@/lib/wallet-service"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -40,17 +17,35 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-
-// Add import for wallet components at the top
-import { WithdrawButtonComponent, TransactionCardComponent, WithdrawalHistoryComponent } from "./wallet-components"
+import {
+  Search,
+  MapPin,
+  Clock,
+  DollarSign,
+  Send,
+  Handshake,
+  CheckCircle,
+  Eye,
+  Wallet,
+  Bell,
+  History,
+  ArrowUpRight,
+  ArrowDownLeft,
+  X,
+  Timer,
+  User,
+  Mail,
+  Phone,
+  Building,
+} from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { WalletService, type Transaction, type WithdrawalHistory } from "@/lib/wallet-service"
+import {
+  WithdrawButtonComponent,
+  TransactionCardComponent,
+  WithdrawalHistoryComponent,
+} from "./wallet-components"
 import Notifications from "./notifications"
-
-interface User {
-  id: string
-  email: string
-  name: string
-  role: "finder" | "poster"
-}
 
 interface Job {
   id: string
@@ -77,10 +72,6 @@ interface Application {
   status: "pending" | "approved" | "rejected"
   appliedAt: string
   message?: string
-  studentEmail?: string
-  studentContact?: string
-  studentDistance?: string
-  studentTimeToReach?: string
 }
 
 interface Negotiation {
@@ -92,14 +83,10 @@ interface Negotiation {
   message: string
   status: "pending" | "accepted" | "rejected"
   createdAt: string
-  studentEmail?: string
-  studentContact?: string
-  studentDistance?: string
-  studentTimeToReach?: string
 }
 
 interface FinderDashboardProps {
-  user: User
+  user: any
 }
 
 export default function FinderDashboard({ user }: FinderDashboardProps) {
@@ -108,20 +95,27 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
   const [negotiations, setNegotiations] = useState<Negotiation[]>([])
   const [confirmedJobs, setConfirmedJobs] = useState<(Application | Negotiation)[]>([])
   const [pastJobs, setPastJobs] = useState<(Application | Negotiation)[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
-  const [walletData, setWalletData] = useState<WalletData | null>(null)
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([])
+  const [walletData, setWalletData] = useState<any>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalHistory[]>([])
-  const [completedJobsCount, setCompletedJobsCount] = useState(0)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
+  const [showJobDetails, setShowJobDetails] = useState(false)
 
   useEffect(() => {
     loadData()
+    loadWalletData()
   }, [])
 
   const loadData = async () => {
     try {
-      // Load all active jobs first
-      const { data: allJobs, error: jobsError } = await supabase.from("jobs").select("*").eq("status", "active")
+      // Load all active jobs
+      const { data: allJobs, error: jobsError } = await supabase
+        .from("jobs")
+        .select("*")
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
 
       if (jobsError) {
         console.error("Error loading jobs:", jobsError)
@@ -132,9 +126,9 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
       const { data: userApplications, error: appsError } = await supabase
         .from("applications")
         .select(`
-          *,
-          jobs (*)
-        `)
+        *,
+        jobs (*)
+      `)
         .eq("finder_id", user.id)
 
       if (appsError) {
@@ -146,9 +140,9 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
       const { data: userNegotiations, error: negsError } = await supabase
         .from("negotiations")
         .select(`
-          *,
-          jobs (*)
-        `)
+        *,
+        jobs (*)
+      `)
         .eq("finder_id", user.id)
 
       if (negsError) {
@@ -156,31 +150,24 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
         return
       }
 
-      // Filter out jobs that user has already applied to or negotiated
-      const userApplicationJobIds = userApplications?.map((app) => app.job_id) || []
-      const userNegotiationJobIds = userNegotiations?.map((neg) => neg.job_id) || []
-      const excludedJobIds = [...userApplicationJobIds, ...userNegotiationJobIds]
-
-      // Only show jobs that are active and user hasn't interacted with
-      const availableJobs = allJobs?.filter((job) => !excludedJobIds.includes(job.id)) || []
-
       // Transform data to match component interface
-      const transformedJobs = availableJobs.map((job) => ({
-        id: job.id,
-        title: job.title,
-        description: job.description,
-        budget: job.budget,
-        postedBy: job.posted_by,
-        posterName: job.poster_name,
-        createdAt: job.created_at,
-        status: job.status as "active" | "completed" | "cancelled",
-        category: job.category,
-        rolesResponsibilities: job.roles_responsibilities,
-        startDate: job.start_date,
-        endDate: job.end_date,
-        startTime: job.start_time,
-        endTime: job.end_time,
-      }))
+      const transformedJobs =
+        allJobs?.map((job) => ({
+          id: job.id,
+          title: job.title,
+          description: job.description,
+          budget: job.budget,
+          postedBy: job.posted_by,
+          posterName: job.poster_name,
+          createdAt: job.created_at,
+          status: job.status as "active" | "completed" | "cancelled",
+          category: job.category,
+          rolesResponsibilities: job.roles_responsibilities,
+          startDate: job.start_date,
+          endDate: job.end_date,
+          startTime: job.start_time,
+          endTime: job.end_time,
+        })) || []
 
       const transformedApplications =
         userApplications?.map((app) => ({
@@ -206,10 +193,6 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
           status: app.status as "pending" | "approved" | "rejected",
           appliedAt: app.applied_at,
           message: app.message,
-          studentEmail: app.student_email,
-          studentContact: app.student_contact,
-          studentDistance: app.student_distance,
-          studentTimeToReach: app.student_time_to_reach,
         })) || []
 
       const transformedNegotiations =
@@ -237,13 +220,9 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
           message: neg.message,
           status: neg.status as "pending" | "accepted" | "rejected",
           createdAt: neg.created_at,
-          studentEmail: neg.student_email,
-          studentContact: neg.student_contact,
-          studentDistance: neg.student_distance,
-          studentTimeToReach: neg.student_time_to_reach,
         })) || []
 
-      // Separate confirmed jobs (approved applications and accepted negotiations)
+      // Separate confirmed jobs (approved applications and accepted negotiations) from completed ones
       const confirmedApps = transformedApplications.filter(
         (app) => app.status === "approved" && app.job.status !== "completed",
       )
@@ -251,28 +230,17 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
         (neg) => neg.status === "accepted" && neg.job.status !== "completed",
       )
 
-      // Past jobs (completed jobs) - should include all statuses when job is completed
-      const pastApps = transformedApplications.filter((app) => app.job.status === "completed")
-      const pastNegs = transformedNegotiations.filter((neg) => neg.job.status === "completed")
-
-      // Load wallet data
-      const wallet = await WalletService.getWallet(user.id)
-      const userTransactions = await WalletService.getTransactions(user.id)
-      const userWithdrawalHistory = await WalletService.getWithdrawalHistory(user.id)
-      const completedJobs = await WalletService.getCompletedJobs(user.id)
-
-      setWalletData(wallet)
-      setTransactions(userTransactions)
-      setWithdrawalHistory(userWithdrawalHistory)
-      setCompletedJobsCount(completedJobs.filter((job) => job.finderId === user.id).length)
+      // Past jobs are completed jobs
+      const pastApps = transformedApplications.filter(
+        (app) => app.status === "approved" && app.job.status === "completed",
+      )
+      const pastNegs = transformedNegotiations.filter(
+        (neg) => neg.status === "accepted" && neg.job.status === "completed",
+      )
 
       setJobs(transformedJobs)
-      setApplications(
-        transformedApplications.filter((app) => app.status === "pending" && app.job.status !== "completed"),
-      )
-      setNegotiations(
-        transformedNegotiations.filter((neg) => neg.status === "pending" && neg.job.status !== "completed"),
-      )
+      setApplications(transformedApplications.filter((app) => app.status === "pending"))
+      setNegotiations(transformedNegotiations.filter((neg) => neg.status === "pending"))
       setConfirmedJobs([...confirmedApps, ...confirmedNegs])
       setPastJobs([...pastApps, ...pastNegs])
     } catch (error) {
@@ -280,51 +248,64 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
     }
   }
 
-  const handleApply = async (job: Job, message: string, studentEmail: string, studentContact: string) => {
+  const loadWalletData = async () => {
+    try {
+      const wallet = await WalletService.getWallet(user.id)
+      const transactionHistory = await WalletService.getTransactions(user.id)
+      const withdrawals = await WalletService.getWithdrawalHistory(user.id)
+
+      setWalletData(wallet)
+      setTransactions(transactionHistory)
+      setWithdrawalHistory(withdrawals)
+    } catch (error) {
+      console.error("Error loading wallet data:", error)
+    }
+  }
+
+  const handleApplyToJob = async (jobId: string, message: string, studentDetails: any) => {
     try {
       const { error } = await supabase.from("applications").insert([
         {
-          job_id: job.id,
+          job_id: jobId,
           finder_id: user.id,
           finder_name: user.name,
-          message: message || null,
-          student_email: studentEmail,
-          student_contact: studentContact,
-          student_distance: "5 km", // default value
-          student_time_to_reach: "30 mins", // default value
+          message,
+          student_email: studentDetails.email,
+          student_contact: studentDetails.contact,
+          student_distance: studentDetails.distance,
+          student_time_to_reach: studentDetails.timeToReach,
         },
       ])
 
       if (error) {
-        console.error("Error creating application:", error)
+        console.error("Error applying to job:", error)
         return
       }
 
-      loadData() // Refresh data
+      loadData()
     } catch (error) {
       console.error("Error applying to job:", error)
     }
   }
 
   const handleNegotiate = async (
-    job: Job,
+    jobId: string,
     proposedAmount: number,
     message: string,
-    studentEmail: string,
-    studentContact: string,
+    studentDetails: any,
   ) => {
     try {
       const { error } = await supabase.from("negotiations").insert([
         {
-          job_id: job.id,
+          job_id: jobId,
           finder_id: user.id,
           finder_name: user.name,
           proposed_amount: proposedAmount,
           message,
-          student_email: studentEmail,
-          student_contact: studentContact,
-          student_distance: "5 km", // default value
-          student_time_to_reach: "30 mins", // default value
+          student_email: studentDetails.email,
+          student_contact: studentDetails.contact,
+          student_distance: studentDetails.distance,
+          student_time_to_reach: studentDetails.timeToReach,
         },
       ])
 
@@ -333,18 +314,23 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
         return
       }
 
-      loadData() // Refresh data
+      loadData()
     } catch (error) {
-      console.error("Error negotiating job:", error)
+      console.error("Error creating negotiation:", error)
     }
   }
 
-  const filteredJobs = jobs.filter(
-    (job) =>
-      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.category.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const filteredJobs = jobs.filter((job) => {
+    const matchesSearch = job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      job.description.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = selectedCategory === "all" || job.category === selectedCategory
+    return matchesSearch && matchesCategory
+  })
+
+  const handleViewJobDetails = (job: Job) => {
+    setSelectedJob(job)
+    setShowJobDetails(true)
+  }
 
   return (
     <div className="space-y-6">
@@ -352,102 +338,129 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
         <h2 className="text-3xl font-bold text-gray-900">Finder Dashboard</h2>
         <div className="flex items-center space-x-2">
           <Badge variant="outline" className="rounded-full">
-            {jobs.length} Available Jobs
+            {applications.length} Pending Applications
           </Badge>
         </div>
       </div>
 
-      <Tabs defaultValue="browse" className="space-y-4 sm:space-y-6">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 rounded-xl bg-white p-1 shadow-sm border">
+      <Tabs defaultValue="browse" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 rounded-xl bg-white p-1 shadow-sm border">
           <TabsTrigger
             value="browse"
-            className="rounded-lg data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700"
           >
-            <Search className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <Search className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Browse Jobs</span>
             <span className="sm:hidden">Browse</span>
           </TabsTrigger>
           <TabsTrigger
             value="applied"
-            className="rounded-lg data-[state=active]:bg-green-50 data-[state=active]:text-green-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700"
           >
-            <FileText className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <Send className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Applied Jobs</span>
             <span className="sm:hidden">Applied</span>
           </TabsTrigger>
           <TabsTrigger
-            value="negotiations"
-            className="rounded-lg data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 text-xs sm:text-sm"
+            value="negotiate"
+            className="rounded-lg data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700"
           >
-            <Handshake className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-            <span className="hidden lg:inline">Negotiations</span>
-            <span className="lg:hidden">Negotiate</span>
+            <Handshake className="h-4 w-4 mr-2" />
+            <span className="hidden sm:inline">Negotiate</span>
+            <span className="sm:hidden">Negotiate</span>
           </TabsTrigger>
           <TabsTrigger
             value="confirmed"
-            className="rounded-lg data-[state=active]:bg-green-50 data-[state=active]:text-green-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-green-50 data-[state=active]:text-green-700"
           >
-            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <CheckCircle className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Confirmed Jobs</span>
             <span className="sm:hidden">Confirmed</span>
           </TabsTrigger>
           <TabsTrigger
             value="past"
-            className="rounded-lg data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-gray-50 data-[state=active]:text-gray-700"
           >
-            <History className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <History className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Past Jobs</span>
             <span className="sm:hidden">Past</span>
           </TabsTrigger>
           <TabsTrigger
             value="wallet"
-            className="rounded-lg data-[state=active]:bg-purple-50 data-[state=active]:text-purple-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700"
           >
-            <Wallet className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <Wallet className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Wallet</span>
             <span className="sm:hidden">Wallet</span>
           </TabsTrigger>
           <TabsTrigger
             value="notifications"
-            className="rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-700 text-xs sm:text-sm"
+            className="rounded-lg data-[state=active]:bg-red-50 data-[state=active]:text-red-700 col-span-3 sm:col-span-1"
           >
-            <Bell className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <Bell className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Notifications</span>
-            <span className="sm:hidden">Alerts</span>
+            <span className="sm:hidden">Notifications</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="browse" className="space-y-6">
           <Card className="rounded-xl border-0 shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl">Browse Available Jobs</CardTitle>
-                  <CardDescription>Find your next opportunity</CardDescription>
-                </div>
-                <div className="relative w-80">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <CardHeader>
+              <CardTitle className="text-xl">Browse Available Jobs</CardTitle>
+              <CardDescription>Find part-time opportunities that match your skills</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
                   <Input
-                    placeholder="Search jobs..."
+                    placeholder="Search jobs by title or description..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 rounded-lg"
+                    className="rounded-lg"
                   />
                 </div>
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-full sm:w-48 rounded-lg">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="tutor">Tutor</SelectItem>
+                    <SelectItem value="reception">Reception</SelectItem>
+                    <SelectItem value="catering">Catering</SelectItem>
+                    <SelectItem value="marketing">Marketing</SelectItem>
+                    <SelectItem value="hotel-care">Hotel Care</SelectItem>
+                    <SelectItem value="customer-service">Customer Service</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="events">Events</SelectItem>
+                    <SelectItem value="photography">Photography</SelectItem>
+                    <SelectItem value="delivery">Delivery</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {filteredJobs.length === 0 ? (
-                <div className="text-center py-12">
-                  <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No jobs available</h3>
-                  <p className="text-gray-500">Check back later for new opportunities</p>
-                </div>
-              ) : (
-                filteredJobs.map((job) => (
-                  <JobCard key={job.id} job={job} onApply={handleApply} onNegotiate={handleNegotiate} />
-                ))
-              )}
+
+              <div className="space-y-4">
+                {filteredJobs.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No jobs found</h3>
+                    <p className="text-gray-500">Try adjusting your search criteria</p>
+                  </div>
+                ) : (
+                  filteredJobs.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      onApply={handleApplyToJob}
+                      onNegotiate={handleNegotiate}
+                      onViewDetails={handleViewJobDetails}
+                      user={user}
+                      hasApplied={applications.some((app) => app.jobId === job.id)}
+                      hasNegotiated={negotiations.some((neg) => neg.jobId === job.id)}
+                    />
+                  ))
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -455,28 +468,30 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
         <TabsContent value="applied" className="space-y-6">
           <Card className="rounded-xl border-0 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-xl">Applied Jobs</CardTitle>
-              <CardDescription>Track your job applications</CardDescription>
+              <CardTitle className="text-xl">Your Applications</CardTitle>
+              <CardDescription>Track the status of your job applications</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {applications.length === 0 ? (
                 <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <Send className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No applications yet</h3>
                   <p className="text-gray-500">Start applying to jobs to see them here</p>
                 </div>
               ) : (
-                applications.map((application) => <ApplicationCard key={application.id} application={application} />)
+                applications.map((application) => (
+                  <ApplicationCard key={application.id} application={application} />
+                ))
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="negotiations" className="space-y-6">
+        <TabsContent value="negotiate" className="space-y-6">
           <Card className="rounded-xl border-0 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-xl">My Negotiations</CardTitle>
-              <CardDescription>Track your negotiation requests</CardDescription>
+              <CardTitle className="text-xl">Your Negotiations</CardTitle>
+              <CardDescription>Track your price negotiation requests</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {negotiations.length === 0 ? (
@@ -486,7 +501,9 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
                   <p className="text-gray-500">Start negotiating on jobs to see them here</p>
                 </div>
               ) : (
-                negotiations.map((negotiation) => <NegotiationCard key={negotiation.id} negotiation={negotiation} />)
+                negotiations.map((negotiation) => (
+                  <NegotiationCard key={negotiation.id} negotiation={negotiation} />
+                ))
               )}
             </CardContent>
           </Card>
@@ -506,7 +523,7 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
                   <p className="text-gray-500">Approved applications and accepted negotiations will appear here</p>
                 </div>
               ) : (
-                confirmedJobs.map((item) => <ConfirmedJobCard key={item.id} item={item} onRefresh={loadData} />)
+                confirmedJobs.map((item) => <ConfirmedJobCard key={item.id} item={item} />)
               )}
             </CardContent>
           </Card>
@@ -516,13 +533,13 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
           <Card className="rounded-xl border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-xl">Past Jobs</CardTitle>
-              <CardDescription>Completed jobs and earnings history</CardDescription>
+              <CardDescription>Your completed job history</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {pastJobs.length === 0 ? (
                 <div className="text-center py-12">
                   <History className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No past jobs yet</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No completed jobs yet</h3>
                   <p className="text-gray-500">Completed jobs will appear here</p>
                 </div>
               ) : (
@@ -532,159 +549,21 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="wallet" className="space-y-4 sm:space-y-6">
-          {/* Balance Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <Card className="rounded-xl border-0 shadow-sm bg-gradient-to-br from-green-50 to-green-100">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-green-600">Total Earnings</p>
-                    <p className="text-xl sm:text-2xl font-bold text-green-700">
-                      ₹{walletData?.totalEarned.toFixed(2) || "0.00"}
-                    </p>
-                  </div>
-                  <DollarSign className="h-6 w-6 sm:h-8 sm:w-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border-0 shadow-sm bg-gradient-to-br from-orange-50 to-orange-100">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-orange-600">Pending Payments</p>
-                    <p className="text-xl sm:text-2xl font-bold text-orange-700">
-                      ₹{walletData?.pendingAmount.toFixed(2) || "0.00"}
-                    </p>
-                  </div>
-                  <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-orange-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border-0 shadow-sm bg-gradient-to-br from-blue-50 to-blue-100 sm:col-span-2 lg:col-span-1">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs sm:text-sm font-medium text-blue-600">Available Balance</p>
-                    <p className="text-xl sm:text-2xl font-bold text-blue-700">
-                      ₹{walletData?.balance.toFixed(2) || "0.00"}
-                    </p>
-                  </div>
-                  <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Balance Summary */}
-          <Card className="rounded-xl border-0 shadow-sm">
-            <CardHeader className="pb-3 sm:pb-4">
-              <CardTitle className="text-lg sm:text-xl">Balance Summary</CardTitle>
-              <CardDescription className="text-sm">Overview of your earnings and withdrawals</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 sm:space-y-4">
-                <div className="flex justify-between items-center p-3 sm:p-4 bg-green-50 rounded-lg">
-                  <span className="font-medium text-green-700 text-sm sm:text-base">Total Earnings</span>
-                  <span className="text-lg sm:text-xl font-bold text-green-700">
-                    ₹{walletData?.totalEarned.toFixed(2) || "0.00"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center p-3 sm:p-4 bg-red-50 rounded-lg">
-                  <span className="font-medium text-red-700 text-sm sm:text-base">Total Withdrawals</span>
-                  <span className="text-lg sm:text-xl font-bold text-red-700">
-                    ₹
-                    {withdrawalHistory
-                      .reduce((sum, w) => sum + (w.status === "completed" ? w.amount : 0), 0)
-                      .toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center p-3 sm:p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
-                  <span className="font-medium text-blue-700 text-sm sm:text-base">Available Balance</span>
-                  <span className="text-xl sm:text-2xl font-bold text-blue-700">
-                    ₹{walletData?.balance.toFixed(2) || "0.00"}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Withdrawal Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            <Card className="rounded-xl border-0 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-3 sm:pb-4">
-                <div>
-                  <CardTitle className="text-lg sm:text-xl">Available Balance</CardTitle>
-                  <CardDescription className="text-sm">Ready for withdrawal</CardDescription>
-                </div>
-                <WithdrawButtonComponent
-                  balance={walletData?.balance || 0}
-                  onWithdraw={() => loadData()}
-                  userId={user.id}
-                />
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-6 sm:py-8">
-                  <div className="text-3xl sm:text-4xl font-bold text-green-600 mb-2">
-                    ₹{walletData?.balance.toFixed(2) || "0.00"}
-                  </div>
-                  <p className="text-gray-500 text-sm">
-                    {completedJobsCount} completed job{completedJobsCount !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-xl border-0 shadow-sm">
-              <CardHeader className="pb-3 sm:pb-4">
-                <CardTitle className="text-lg sm:text-xl">Payment History</CardTitle>
-                <CardDescription className="text-sm">Your recent transactions</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 sm:space-y-4 max-h-80 sm:max-h-96 overflow-y-auto">
-                {transactions.length === 0 ? (
-                  <div className="text-center py-6 sm:py-8">
-                    <Wallet className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No transactions yet</h3>
-                    <p className="text-gray-500 text-sm">Complete jobs to start earning</p>
-                  </div>
-                ) : (
-                  transactions.map((transaction) => (
-                    <TransactionCardComponent key={transaction.id} transaction={transaction} />
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Past Withdrawals Section */}
-          <Card className="rounded-xl border-0 shadow-sm">
-            <CardHeader className="pb-3 sm:pb-4">
-              <CardTitle className="text-lg sm:text-xl">Past Withdrawals</CardTitle>
-              <CardDescription className="text-sm">Your withdrawal history with status tracking</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 sm:space-y-4">
-              {withdrawalHistory.length === 0 ? (
-                <div className="text-center py-6 sm:py-8">
-                  <CreditCard className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">No withdrawals yet</h3>
-                  <p className="text-gray-500 text-sm">Your withdrawal history will appear here</p>
-                </div>
-              ) : (
-                withdrawalHistory.map((withdrawal) => (
-                  <WithdrawalHistoryComponent key={withdrawal.id} withdrawal={withdrawal} />
-                ))
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="wallet" className="space-y-6">
+          <WalletSection
+            walletData={walletData}
+            transactions={transactions}
+            withdrawalHistory={withdrawalHistory}
+            onWithdraw={loadWalletData}
+            userId={user.id}
+          />
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-6">
           <Card className="rounded-xl border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-xl">Notifications</CardTitle>
-              <CardDescription>Stay updated on your applications and jobs</CardDescription>
+              <CardDescription>Stay updated on your applications and job status</CardDescription>
             </CardHeader>
             <CardContent>
               <Notifications user={user} />
@@ -692,6 +571,79 @@ export default function FinderDashboard({ user }: FinderDashboardProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Job Details Dialog */}
+      <Dialog open={showJobDetails} onOpenChange={setShowJobDetails}>
+        <DialogContent className="rounded-xl max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Job Details</DialogTitle>
+          </DialogHeader>
+          {selectedJob && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold text-lg">{selectedJob.title}</h3>
+                <Badge variant="outline" className="rounded-full mt-1">
+                  {selectedJob.category}
+                </Badge>
+              </div>
+
+              <div>
+                <Label className="font-medium">Description:</Label>
+                <p className="text-gray-700 mt-1">{selectedJob.description}</p>
+              </div>
+
+              {selectedJob.rolesResponsibilities && (
+                <div>
+                  <Label className="font-medium">Roles & Responsibilities:</Label>
+                  <p className="text-gray-700 mt-1">{selectedJob.rolesResponsibilities}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="font-medium">Budget:</Label>
+                  <p className="text-green-600 font-semibold">₹{selectedJob.budget.toLocaleString()}</p>
+                </div>
+                <div>
+                  <Label className="font-medium">Posted by:</Label>
+                  <p className="text-gray-700">{selectedJob.posterName}</p>
+                </div>
+              </div>
+
+              {(selectedJob.startDate || selectedJob.endDate) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="font-medium">Start Date:</Label>
+                    <p className="text-gray-700">{selectedJob.startDate || "Not specified"}</p>
+                  </div>
+                  <div>
+                    <Label className="font-medium">End Date:</Label>
+                    <p className="text-gray-700">{selectedJob.endDate || "Not specified"}</p>
+                  </div>
+                </div>
+              )}
+
+              {(selectedJob.startTime || selectedJob.endTime) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="font-medium">Start Time:</Label>
+                    <p className="text-gray-700">{selectedJob.startTime || "Not specified"}</p>
+                  </div>
+                  <div>
+                    <Label className="font-medium">End Time:</Label>
+                    <p className="text-gray-700">{selectedJob.endTime || "Not specified"}</p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label className="font-medium">Posted:</Label>
+                <p className="text-gray-700">{new Date(selectedJob.createdAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -700,10 +652,18 @@ function JobCard({
   job,
   onApply,
   onNegotiate,
+  onViewDetails,
+  user,
+  hasApplied,
+  hasNegotiated,
 }: {
   job: Job
-  onApply: (job: Job, message: string, studentEmail: string, studentContact: string) => void
-  onNegotiate: (job: Job, proposedAmount: number, message: string, studentEmail: string, studentContact: string) => void
+  onApply: (jobId: string, message: string, studentDetails: any) => void
+  onNegotiate: (jobId: string, proposedAmount: number, message: string, studentDetails: any) => void
+  onViewDetails: (job: Job) => void
+  user: any
+  hasApplied: boolean
+  hasNegotiated: boolean
 }) {
   const [showApplyDialog, setShowApplyDialog] = useState(false)
   const [showNegotiateDialog, setShowNegotiateDialog] = useState(false)
@@ -712,204 +672,318 @@ function JobCard({
   const [negotiationMessage, setNegotiationMessage] = useState("")
   const [studentEmail, setStudentEmail] = useState("")
   const [studentContact, setStudentContact] = useState("")
+  const [studentDistance, setStudentDistance] = useState("5 km")
+  const [studentTimeToReach, setStudentTimeToReach] = useState("30 mins")
 
   const handleApply = () => {
-    onApply(job, applicationMessage, studentEmail, studentContact)
+    if (!applicationMessage.trim()) return
+
+    const studentDetails = {
+      email: studentEmail,
+      contact: studentContact,
+      distance: studentDistance,
+      timeToReach: studentTimeToReach,
+    }
+
+    onApply(job.id, applicationMessage, studentDetails)
     setShowApplyDialog(false)
     setApplicationMessage("")
     setStudentEmail("")
     setStudentContact("")
+    setStudentDistance("5 km")
+    setStudentTimeToReach("30 mins")
   }
 
   const handleNegotiate = () => {
     const amount = Number.parseFloat(negotiationAmount)
-    if (amount > 0) {
-      onNegotiate(job, amount, negotiationMessage, studentEmail, studentContact)
-      setShowNegotiateDialog(false)
-      setNegotiationAmount("")
-      setNegotiationMessage("")
-      setStudentEmail("")
-      setStudentContact("")
+    if (!amount || amount <= 0 || !negotiationMessage.trim()) return
+
+    const studentDetails = {
+      email: studentEmail,
+      contact: studentContact,
+      distance: studentDistance,
+      timeToReach: studentTimeToReach,
     }
+
+    onNegotiate(job.id, amount, negotiationMessage, studentDetails)
+    setShowNegotiateDialog(false)
+    setNegotiationAmount("")
+    setNegotiationMessage("")
+    setStudentEmail("")
+    setStudentContact("")
+    setStudentDistance("5 km")
+    setStudentTimeToReach("30 mins")
   }
 
   return (
     <Card className="rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
       <CardContent className="p-6">
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex justify-between items-start">
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">{job.title}</h3>
-            <p className="text-gray-600 mb-3 line-clamp-2">{job.description}</p>
-            {job.rolesResponsibilities && (
-              <div className="mb-3 p-3 bg-gray-50 rounded-lg">
-                <h4 className="text-sm font-medium text-gray-700 mb-1">Roles & Responsibilities:</h4>
-                <p className="text-sm text-gray-600">{job.rolesResponsibilities}</p>
-              </div>
-            )}
-            <div className="flex items-center space-x-4 text-sm text-gray-500 mb-2">
-              <span>By {job.posterName}</span>
-              <span>•</span>
-              <span>{new Date(job.createdAt).toLocaleDateString()}</span>
+            <div className="flex items-center space-x-2 mb-2">
+              <h3 className="text-lg font-semibold text-gray-900">{job.title}</h3>
               <Badge variant="outline" className="rounded-full">
                 {job.category}
               </Badge>
             </div>
-            {(job.startDate || job.endDate || job.startTime || job.endTime) && (
-              <div className="flex items-center space-x-4 text-sm text-gray-500">
-                {job.startDate && <span>Start: {job.startDate}</span>}
-                {job.endDate && <span>End: {job.endDate}</span>}
-                {job.startTime && <span>Time: {job.startTime}</span>}
-                {job.endTime && <span>- {job.endTime}</span>}
+            <p className="text-gray-600 mb-3 line-clamp-2">{job.description}</p>
+            <div className="flex items-center space-x-4 text-sm text-gray-500 mb-4">
+              <div className="flex items-center space-x-1">
+                <User className="h-4 w-4" />
+                <span>{job.posterName}</span>
               </div>
-            )}
+              <div className="flex items-center space-x-1">
+                <Clock className="h-4 w-4" />
+                <span>{new Date(job.createdAt).toLocaleDateString()}</span>
+              </div>
+              {job.startDate && (
+                <div className="flex items-center space-x-1">
+                  <MapPin className="h-4 w-4" />
+                  <span>Starts {job.startDate}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onViewDetails(job)}
+                className="rounded-lg bg-transparent"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                View Details
+              </Button>
+              {!hasApplied && !hasNegotiated && (
+                <>
+                  <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="rounded-lg">
+                        <Send className="h-4 w-4 mr-2" />
+                        Apply
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="rounded-xl">
+                      <DialogHeader>
+                        <DialogTitle>Apply for Job</DialogTitle>
+                        <DialogDescription>Submit your application for "{job.title}"</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="email">Email</Label>
+                            <Input
+                              id="email"
+                              type="email"
+                              placeholder="your.email@example.com"
+                              value={studentEmail}
+                              onChange={(e) => setStudentEmail(e.target.value)}
+                              className="rounded-lg"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="contact">Contact Number</Label>
+                            <Input
+                              id="contact"
+                              placeholder="+91 9876543210"
+                              value={studentContact}
+                              onChange={(e) => setStudentContact(e.target.value)}
+                              className="rounded-lg"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="distance">Distance from Location</Label>
+                            <Select value={studentDistance} onValueChange={setStudentDistance}>
+                              <SelectTrigger className="rounded-lg">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1 km">1 km</SelectItem>
+                                <SelectItem value="2 km">2 km</SelectItem>
+                                <SelectItem value="5 km">5 km</SelectItem>
+                                <SelectItem value="10 km">10 km</SelectItem>
+                                <SelectItem value="15 km">15 km</SelectItem>
+                                <SelectItem value="20+ km">20+ km</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="timeToReach">Time to Reach</Label>
+                            <Select value={studentTimeToReach} onValueChange={setStudentTimeToReach}>
+                              <SelectTrigger className="rounded-lg">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="15 mins">15 mins</SelectItem>
+                                <SelectItem value="30 mins">30 mins</SelectItem>
+                                <SelectItem value="45 mins">45 mins</SelectItem>
+                                <SelectItem value="1 hour">1 hour</SelectItem>
+                                <SelectItem value="1.5 hours">1.5 hours</SelectItem>
+                                <SelectItem value="2+ hours">2+ hours</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="message">Cover Message</Label>
+                          <Textarea
+                            id="message"
+                            placeholder="Tell the employer why you're perfect for this job..."
+                            value={applicationMessage}
+                            onChange={(e) => setApplicationMessage(e.target.value)}
+                            className="rounded-lg min-h-[100px]"
+                          />
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={handleApply}
+                            className="flex-1 rounded-lg"
+                            disabled={!applicationMessage.trim()}
+                          >
+                            Submit Application
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowApplyDialog(false)}
+                            className="rounded-lg"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={showNegotiateDialog} onOpenChange={setShowNegotiateDialog}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="rounded-lg bg-transparent">
+                        <Handshake className="h-4 w-4 mr-2" />
+                        Negotiate
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="rounded-xl">
+                      <DialogHeader>
+                        <DialogTitle>Negotiate Price</DialogTitle>
+                        <DialogDescription>
+                          Propose a different amount for "{job.title}" (Current: ₹{job.budget.toLocaleString()})
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="email">Email</Label>
+                            <Input
+                              id="email"
+                              type="email"
+                              placeholder="your.email@example.com"
+                              value={studentEmail}
+                              onChange={(e) => setStudentEmail(e.target.value)}
+                              className="rounded-lg"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="contact">Contact Number</Label>
+                            <Input
+                              id="contact"
+                              placeholder="+91 9876543210"
+                              value={studentContact}
+                              onChange={(e) => setStudentContact(e.target.value)}
+                              className="rounded-lg"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="distance">Distance from Location</Label>
+                            <Select value={studentDistance} onValueChange={setStudentDistance}>
+                              <SelectTrigger className="rounded-lg">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1 km">1 km</SelectItem>
+                                <SelectItem value="2 km">2 km</SelectItem>
+                                <SelectItem value="5 km">5 km</SelectItem>
+                                <SelectItem value="10 km">10 km</SelectItem>
+                                <SelectItem value="15 km">15 km</SelectItem>
+                                <SelectItem value="20+ km">20+ km</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="timeToReach">Time to Reach</Label>
+                            <Select value={studentTimeToReach} onValueChange={setStudentTimeToReach}>
+                              <SelectTrigger className="rounded-lg">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="15 mins">15 mins</SelectItem>
+                                <SelectItem value="30 mins">30 mins</SelectItem>
+                                <SelectItem value="45 mins">45 mins</SelectItem>
+                                <SelectItem value="1 hour">1 hour</SelectItem>
+                                <SelectItem value="1.5 hours">1.5 hours</SelectItem>
+                                <SelectItem value="2+ hours">2+ hours</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="amount">Proposed Amount (₹)</Label>
+                          <Input
+                            id="amount"
+                            type="number"
+                            placeholder="Enter your proposed amount"
+                            value={negotiationAmount}
+                            onChange={(e) => setNegotiationAmount(e.target.value)}
+                            className="rounded-lg"
+                            min="1"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="negotiationMessage">Justification</Label>
+                          <Textarea
+                            id="negotiationMessage"
+                            placeholder="Explain why you're proposing this amount..."
+                            value={negotiationMessage}
+                            onChange={(e) => setNegotiationMessage(e.target.value)}
+                            className="rounded-lg min-h-[100px]"
+                          />
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={handleNegotiate}
+                            className="flex-1 rounded-lg"
+                            disabled={
+                              !negotiationAmount ||
+                              Number.parseFloat(negotiationAmount) <= 0 ||
+                              !negotiationMessage.trim()
+                            }
+                          >
+                            Submit Proposal
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowNegotiateDialog(false)}
+                            className="rounded-lg"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </>
+              )}
+              {(hasApplied || hasNegotiated) && (
+                <Badge className="rounded-full bg-blue-100 text-blue-800">
+                  {hasApplied ? "Applied" : "Negotiated"}
+                </Badge>
+              )}
+            </div>
           </div>
           <div className="text-right ml-6">
-            <div className="text-2xl font-bold text-green-600 mb-2">₹{job.budget.toLocaleString()}</div>
-            <div className="flex space-x-2">
-              <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="rounded-lg">
-                    Apply Now
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl">
-                  <DialogHeader>
-                    <DialogTitle>Apply for Job</DialogTitle>
-                    <DialogDescription>Send your application for "{job.title}"</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="studentEmail">Email *</Label>
-                        <Input
-                          id="studentEmail"
-                          type="email"
-                          placeholder="Your email"
-                          value={studentEmail}
-                          onChange={(e) => setStudentEmail(e.target.value)}
-                          className="rounded-lg"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="studentContact">Contact Number *</Label>
-                        <Input
-                          id="studentContact"
-                          placeholder="Your contact number"
-                          value={studentContact}
-                          onChange={(e) => setStudentContact(e.target.value)}
-                          className="rounded-lg"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="message">Application Message (Optional)</Label>
-                      <Textarea
-                        id="message"
-                        placeholder="Tell the poster why you're perfect for this job..."
-                        value={applicationMessage}
-                        onChange={(e) => setApplicationMessage(e.target.value)}
-                        className="rounded-lg"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button
-                        onClick={handleApply}
-                        className="flex-1 rounded-lg"
-                        disabled={!studentEmail || !studentContact}
-                      >
-                        <Send className="h-4 w-4 mr-2" />
-                        Send Application
-                      </Button>
-                      <Button variant="outline" onClick={() => setShowApplyDialog(false)} className="rounded-lg">
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={showNegotiateDialog} onOpenChange={setShowNegotiateDialog}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="rounded-lg bg-transparent">
-                    Negotiate
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl">
-                  <DialogHeader>
-                    <DialogTitle>Negotiate Price</DialogTitle>
-                    <DialogDescription>Propose a different amount for "{job.title}"</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="studentEmailNeg">Email *</Label>
-                        <Input
-                          id="studentEmailNeg"
-                          type="email"
-                          placeholder="Your email"
-                          value={studentEmail}
-                          onChange={(e) => setStudentEmail(e.target.value)}
-                          className="rounded-lg"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="studentContactNeg">Contact Number *</Label>
-                        <Input
-                          id="studentContactNeg"
-                          placeholder="Your contact number"
-                          value={studentContact}
-                          onChange={(e) => setStudentContact(e.target.value)}
-                          className="rounded-lg"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="amount">Proposed Amount (₹)</Label>
-                      <Input
-                        id="amount"
-                        type="number"
-                        placeholder="Enter your proposed amount"
-                        value={negotiationAmount}
-                        onChange={(e) => setNegotiationAmount(e.target.value)}
-                        className="rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="negotiation-message">Message</Label>
-                      <Textarea
-                        id="negotiation-message"
-                        placeholder="Explain your proposed amount..."
-                        value={negotiationMessage}
-                        onChange={(e) => setNegotiationMessage(e.target.value)}
-                        className="rounded-lg"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button
-                        onClick={handleNegotiate}
-                        className="flex-1 rounded-lg"
-                        disabled={
-                          !negotiationAmount ||
-                          Number.parseFloat(negotiationAmount) <= 0 ||
-                          !studentEmail ||
-                          !studentContact
-                        }
-                      >
-                        <Handshake className="h-4 w-4 mr-2" />
-                        Send Proposal
-                      </Button>
-                      <Button variant="outline" onClick={() => setShowNegotiateDialog(false)} className="rounded-lg">
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
+            <div className="text-2xl font-bold text-green-600">₹{job.budget.toLocaleString()}</div>
+            <div className="text-sm text-gray-500">Budget</div>
           </div>
         </div>
       </CardContent>
@@ -920,21 +994,17 @@ function JobCard({
 function ApplicationCard({ application }: { application: Application }) {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
       case "approved":
         return "bg-green-100 text-green-800"
       case "rejected":
         return "bg-red-100 text-red-800"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-yellow-100 text-yellow-800"
     }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "pending":
-        return <Clock className="h-4 w-4" />
       case "approved":
         return <CheckCircle className="h-4 w-4" />
       case "rejected":
@@ -955,10 +1025,6 @@ function ApplicationCard({ application }: { application: Application }) {
               <span>Applied {new Date(application.appliedAt).toLocaleDateString()}</span>
               <span>•</span>
               <span>Budget: ₹{application.job.budget.toLocaleString()}</span>
-              <div className="flex items-center space-x-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <span>Rate this job</span>
-              </div>
             </div>
             {application.message && (
               <div className="mt-3 p-3 bg-gray-50 rounded-lg">
@@ -981,21 +1047,17 @@ function ApplicationCard({ application }: { application: Application }) {
 function NegotiationCard({ negotiation }: { negotiation: Negotiation }) {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800"
       case "accepted":
         return "bg-green-100 text-green-800"
       case "rejected":
         return "bg-red-100 text-red-800"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-yellow-100 text-yellow-800"
     }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "pending":
-        return <Clock className="h-4 w-4" />
       case "accepted":
         return <CheckCircle className="h-4 w-4" />
       case "rejected":
@@ -1015,15 +1077,11 @@ function NegotiationCard({ negotiation }: { negotiation: Negotiation }) {
               <span className="text-sm text-gray-500">Original: ₹{negotiation.job.budget.toLocaleString()}</span>
               <span className="text-sm text-gray-400">→</span>
               <span className="text-lg font-semibold text-blue-600">
-                Proposed: ₹{negotiation.proposedAmount.toLocaleString()}
+                Your Offer: ₹{negotiation.proposedAmount.toLocaleString()}
               </span>
             </div>
             <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
-              <span>Sent {new Date(negotiation.createdAt).toLocaleDateString()}</span>
-              <div className="flex items-center space-x-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <span>Rate this negotiation</span>
-              </div>
+              <span>Proposed {new Date(negotiation.createdAt).toLocaleDateString()}</span>
             </div>
             <div className="p-3 bg-gray-50 rounded-lg">
               <p className="text-sm text-gray-700">"{negotiation.message}"</p>
@@ -1041,51 +1099,9 @@ function NegotiationCard({ negotiation }: { negotiation: Negotiation }) {
   )
 }
 
-function ConfirmedJobCard({ item, onRefresh }: { item: Application | Negotiation; onRefresh?: () => void }) {
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
-
+function ConfirmedJobCard({ item }: { item: Application | Negotiation }) {
   const isNegotiation = "proposedAmount" in item
   const finalAmount = isNegotiation ? item.proposedAmount : item.job.budget
-
-  const handleCompletePayment = async () => {
-    if (!selectedPaymentMethod) return
-
-    setIsProcessing(true)
-    try {
-      // Simulate payment processing
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      // Complete the job in the database using WalletService
-      const success = await WalletService.completeJob(
-        item.jobId,
-        item.finderId,
-        item.job.postedBy,
-        finalAmount,
-        `Job completed with ${selectedPaymentMethod} payment`,
-      )
-
-      if (success) {
-        setShowPaymentDialog(false)
-        setSelectedPaymentMethod("")
-
-        // Refresh the data to update the UI
-        if (onRefresh) {
-          onRefresh()
-        }
-
-        alert(`Payment completed successfully via ${selectedPaymentMethod}!`)
-      } else {
-        throw new Error("Failed to complete job")
-      }
-    } catch (error) {
-      console.error("Payment error:", error)
-      alert("Payment failed. Please try again.")
-    } finally {
-      setIsProcessing(false)
-    }
-  }
 
   return (
     <Card className="rounded-lg border border-gray-200 bg-green-50">
@@ -1093,6 +1109,7 @@ function ConfirmedJobCard({ item, onRefresh }: { item: Application | Negotiation
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">{item.job.title}</h3>
+            <p className="text-gray-600 mb-3 line-clamp-2">{item.job.description}</p>
             <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
               <span>
                 {isNegotiation ? "Negotiation accepted" : "Application approved"} on{" "}
@@ -1109,137 +1126,30 @@ function ConfirmedJobCard({ item, onRefresh }: { item: Application | Negotiation
               </div>
             )}
 
-            {/* Payment Action Button */}
-            <div className="mt-4">
-              <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-                <DialogTrigger asChild>
-                  <Button size="sm" className="rounded-lg bg-blue-600 hover:bg-blue-700">
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Mark as Complete and Make Payment
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Complete Job & Make Payment</DialogTitle>
-                    <DialogDescription>Complete "{item.job.title}" and process payment</DialogDescription>
-                  </DialogHeader>
-
-                  <div className="space-y-6">
-                    {/* Payment Amount Display */}
-                    <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                      <div className="text-center">
-                        <p className="text-sm text-green-600 mb-1">Payment Amount</p>
-                        <p className="text-3xl font-bold text-green-700">₹{finalAmount.toLocaleString()}</p>
-                        <p className="text-xs text-green-600 mt-1">
-                          {isNegotiation ? "Negotiated Amount" : "Original Job Amount"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Payment Method Selection */}
-                    <div className="space-y-3">
-                      <Label className="text-sm font-medium">Select Payment Method</Label>
-
-                      <div className="space-y-2">
-                        <Button
-                          variant={selectedPaymentMethod === "cash" ? "default" : "outline"}
-                          className="w-full justify-start h-12 rounded-lg"
-                          onClick={() => setSelectedPaymentMethod("cash")}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-green-100 rounded-full">
-                              <DollarSign className="h-4 w-4 text-green-600" />
-                            </div>
-                            <div className="text-left">
-                              <div className="font-medium">Cash Payment</div>
-                              <div className="text-xs text-gray-500">Pay in cash directly</div>
-                            </div>
-                          </div>
-                        </Button>
-
-                        <Button
-                          variant={selectedPaymentMethod === "upi" ? "default" : "outline"}
-                          className="w-full justify-start h-12 rounded-lg"
-                          onClick={() => setSelectedPaymentMethod("upi")}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-blue-100 rounded-full">
-                              <Smartphone className="h-4 w-4 text-blue-600" />
-                            </div>
-                            <div className="text-left">
-                              <div className="font-medium">UPI Payment</div>
-                              <div className="text-xs text-gray-500">Pay via UPI apps</div>
-                            </div>
-                          </div>
-                        </Button>
-
-                        <Button
-                          variant={selectedPaymentMethod === "bank" ? "default" : "outline"}
-                          className="w-full justify-start h-12 rounded-lg"
-                          onClick={() => setSelectedPaymentMethod("bank")}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-purple-100 rounded-full">
-                              <Building className="h-4 w-4 text-purple-600" />
-                            </div>
-                            <div className="text-left">
-                              <div className="font-medium">Bank Transfer</div>
-                              <div className="text-xs text-gray-500">Direct bank transfer</div>
-                            </div>
-                          </div>
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex space-x-3">
-                      <Button
-                        onClick={handleCompletePayment}
-                        className="flex-1 rounded-lg"
-                        disabled={!selectedPaymentMethod || isProcessing}
-                      >
-                        {isProcessing ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Complete & Pay
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowPaymentDialog(false)
-                          setSelectedPaymentMethod("")
-                        }}
-                        className="rounded-lg"
-                        disabled={isProcessing}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-
-                    {selectedPaymentMethod && (
-                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <p className="text-xs text-blue-700">
-                          <strong>Note:</strong> By completing this job, you confirm that the work has been finished
-                          satisfactorily and you're ready to process payment via {selectedPaymentMethod}.
-                        </p>
-                      </div>
-                    )}
+            {/* Contact Information Section */}
+            <div className="mt-4 p-4 bg-white rounded-lg border">
+              <h4 className="font-medium text-gray-900 mb-3">Contact Information</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex items-center space-x-2">
+                  <User className="h-4 w-4 text-gray-500" />
+                  <span>Poster: {item.job.posterName}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Building className="h-4 w-4 text-gray-500" />
+                  <span>Category: {item.job.category}</span>
+                </div>
+                {item.job.startDate && (
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="h-4 w-4 text-gray-500" />
+                    <span>Start: {item.job.startDate}</span>
                   </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            <div className="flex items-center space-x-4 text-sm text-gray-500 mt-3">
-              <div className="flex items-center space-x-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <span>Rate this job</span>
+                )}
+                {item.job.startTime && (
+                  <div className="flex items-center space-x-2">
+                    <Timer className="h-4 w-4 text-gray-500" />
+                    <span>Time: {item.job.startTime}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1260,29 +1170,27 @@ function PastJobCard({ item }: { item: Application | Negotiation }) {
   const finalAmount = isNegotiation ? item.proposedAmount : item.job.budget
 
   return (
-    <Card className="rounded-lg border border-gray-200 bg-blue-50">
+    <Card className="rounded-lg border border-gray-200 bg-gray-50">
       <CardContent className="p-6">
         <div className="flex justify-between items-start">
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">{item.job.title}</h3>
+            <p className="text-gray-600 mb-3 line-clamp-2">{item.job.description}</p>
             <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
               <span>Completed</span>
               <span>•</span>
               <span className="font-semibold text-green-600">Earned: ₹{finalAmount.toLocaleString()}</span>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <div className="flex items-center space-x-1">
-                <Star className="h-4 w-4 text-yellow-500" />
-                <Star className="h-4 w-4 text-yellow-500" />
-                <Star className="h-4 w-4 text-yellow-500" />
-                <Star className="h-4 w-4 text-yellow-500" />
-                <Star className="h-4 w-4 text-gray-300" />
-                <span>4.0 rating</span>
+            {isNegotiation && (
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <span>Original: ₹{item.job.budget.toLocaleString()}</span>
+                <span>→</span>
+                <span>Negotiated: ₹{item.proposedAmount.toLocaleString()}</span>
               </div>
-            </div>
+            )}
           </div>
           <div className="ml-6">
-            <Badge className="rounded-full bg-blue-100 text-blue-800">
+            <Badge className="rounded-full bg-gray-100 text-gray-800">
               <CheckCircle className="h-4 w-4 mr-1" />
               Completed
             </Badge>
@@ -1290,5 +1198,133 @@ function PastJobCard({ item }: { item: Application | Negotiation }) {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function WalletSection({
+  walletData,
+  transactions,
+  withdrawalHistory,
+  onWithdraw,
+  userId,
+}: {
+  walletData: any
+  transactions: Transaction[]
+  withdrawalHistory: WithdrawalHistory[]
+  onWithdraw: () => void
+  userId: string
+}) {
+  const [activeTab, setActiveTab] = useState("overview")
+
+  return (
+    <div className="space-y-6">
+      {/* Wallet Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="rounded-xl border-0 shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Available Balance</p>
+                <p className="text-2xl font-bold text-green-600">₹{walletData?.balance?.toFixed(2) || "0.00"}</p>
+              </div>
+              <div className="p-3 bg-green-100 rounded-full">
+                <Wallet className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
+            <div className="mt-4">
+              <WithdrawButtonComponent balance={walletData?.balance || 0} onWithdraw={onWithdraw} userId={userId} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-xl border-0 shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Earned</p>
+                <p className="text-2xl font-bold text-blue-600">₹{walletData?.totalEarned?.toFixed(2) || "0.00"}</p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-full">
+                <ArrowDownLeft className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-xl border-0 shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Pending Amount</p>
+                <p className="text-2xl font-bold text-orange-600">₹{walletData?.pendingAmount?.toFixed(2) || "0.00"}</p>
+              </div>
+              <div className="p-3 bg-orange-100 rounded-full">
+                <Clock className="h-6 w-6 text-orange-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Wallet Tabs */}
+      <Card className="rounded-xl border-0 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl">Wallet Activity</CardTitle>
+            <div className="flex space-x-2">
+              <Button
+                variant={activeTab === "overview" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab("overview")}
+                className="rounded-lg"
+              >
+                Transactions
+              </Button>
+              <Button
+                variant={activeTab === "withdrawals" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveTab("withdrawals")}
+                className="rounded-lg"
+              >
+                Withdrawals
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {activeTab === "overview" && (
+            <div className="space-y-4">
+              {transactions.length === 0 ? (
+                <div className="text-center py-12">
+                  <DollarSign className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions yet</h3>
+                  <p className="text-gray-500">Your transaction history will appear here</p>
+                </div>
+              ) : (
+                transactions.map((transaction) => (
+                  <TransactionCardComponent key={transaction.id} transaction={transaction} />
+                ))
+              )}
+            </div>
+          )}
+
+          {activeTab === "withdrawals" && (
+            <div className="space-y-4">
+              {withdrawalHistory.length === 0 ? (
+                <div className="text-center py-12">
+                  <ArrowUpRight className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No withdrawals yet</h3>
+                  <p className="text-gray-500">Your withdrawal history will appear here</p>
+                </div>
+              ) : (
+                withdrawalHistory.map((withdrawal) => (
+                  <WithdrawalHistoryComponent key={withdrawal.id} withdrawal={withdrawal} />
+                ))
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }
